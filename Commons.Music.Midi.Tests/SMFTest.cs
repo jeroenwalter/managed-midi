@@ -57,39 +57,7 @@ namespace Commons.Music.Midi.Tests
 			Assert.AreEqual (125, music.GetTimePositionInMillisecondsForTick (48), "tick 48");
 			Assert.AreEqual (500, music.GetTimePositionInMillisecondsForTick (192), "tick 192");
 		}
-
-		// FIXME: this test seems to be order/position dependent.
-		// It should be moved to MidiPlayerTest class, but it caused regression.
-		// 
-		// It is likely related to manifest resource tetrieval.
-		[Test]
-		public void GetTimePositionInMillisecondsForTick ()
-		{
-			var vt = new VirtualMidiPlayerTimeManager ();
-			var player = TestHelper.GetMidiPlayer (vt);
-			player.Play ();
-			vt.ProceedBy (100);
-			player.Seek (5000);
-			Task.Delay (200);
-			Assert.AreEqual (5000, player.PlayDeltaTime, "1 PlayDeltaTime");
-			Assert.AreEqual (12, (int) player.PositionInTime.TotalSeconds, "1 PositionInTime");
-			vt.ProceedBy (100);
-			// FIXME: this is ugly.
-			Task.Delay (100);
-			// FIXME: not working
-			//Assert.AreEqual (5100, player.PlayDeltaTime, "2 PlayDeltaTime");
-			Assert.AreEqual (12, (int) player.PositionInTime.TotalSeconds, "2 PositionInTime");
-			player.Seek (2000);
-			Assert.AreEqual (2000, player.PlayDeltaTime, "3 PlayDeltaTime");
-			Assert.AreEqual (5, (int) player.PositionInTime.TotalSeconds, "3 PositionInTime");
-			vt.ProceedBy (100);
-			// FIXME: this is ugly.
-			Task.Delay (100);
-			// FIXME: not working
-			//Assert.AreEqual (2100, player.PlayDeltaTime, "4 PlayDeltaTime");
-			Assert.AreEqual (5, (int) player.PositionInTime.TotalSeconds, "4 PositionInTime");
-		}
-
+		
 		[Test]
 		public void SmfReaderRead ()
 		{
