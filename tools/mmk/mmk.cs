@@ -184,7 +184,7 @@ namespace Commons.Music.Midi
 			MenuItem sub = null;
 			for (int i = 0; i < tone_list.Count; i++) {
 				if (i % 8 == 0) {
-					sub = new MenuItem (tone_categories [i / 8]);
+					sub = new MenuItem (tone_categories [Math.Min(i / 8, tone_categories.Length-1)]);
 					tone_menu.MenuItems.Add (sub);
 				}
 				var mi = new MenuItem (tone_list [i]);
