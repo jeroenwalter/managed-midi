@@ -44,45 +44,53 @@ namespace Commons.Music.Midi
 
 			messages = SmfTrackMerger.Merge (music).Tracks [0].Messages;
 			player = new MidiEventLooper (messages, timeManager, music.DeltaTimeSpec);
-			player.Starting += () => {
-				// all control reset on all channels.
-				for (int i = 0; i < 16; i++) {
-					buffer [0] = (byte) (i + 0xB0);
-					buffer [1] = 0x79;
-					buffer [2] = 0;
-					output.Send (buffer, 0, 3, 0);
-				}
-			};
-			EventReceived += (m) => {
-				switch (m.EventType) {
-				case MidiEvent.NoteOn:
-				case MidiEvent.NoteOff:
-					if (channel_mask != null && channel_mask [m.Channel])
-						return; // ignore messages for the masked channel.
-					goto default;
-				case MidiEvent.SysEx1:
-				case MidiEvent.SysEx2:
-					if (buffer.Length <= m.ExtraDataLength)
-						buffer = new byte [buffer.Length * 2];
-					buffer [0] = m.StatusByte;
-					Array.Copy (m.ExtraData, m.ExtraDataOffset, buffer, 1, m.ExtraDataLength);
-					output.Send (buffer, 0, m.ExtraDataLength + 1, 0);
-					break;
-				case MidiEvent.Meta:
-					// do nothing.
-					break;
-				default:
-					var size = MidiEvent.FixedDataSize (m.StatusByte);
-					buffer [0] = m.StatusByte;
-					buffer [1] = m.Msb;
-					buffer [2] = m.Lsb;
-					output.Send (buffer, 0, size + 1, 0);
-					break;
-				}
-			};
+			player.Starting += ResetControllersOnAllChannels;
+			EventReceived += OnEventReceived;
 		}
 
-		MidiEventLooper player;
+    private void OnEventReceived(MidiEvent m)
+    {
+      switch (m.EventType)
+      {
+        case MidiEvent.NoteOn:
+        case MidiEvent.NoteOff:
+          if (channel_mask != null && channel_mask[m.Channel])
+            return;
+          goto default;
+        case MidiEvent.SysEx1:
+        case MidiEvent.SysEx2:
+          if (buffer.Length <= m.ExtraDataLength)
+            buffer = new byte [buffer.Length * 2];
+          buffer[0] = m.StatusByte;
+          Array.Copy(m.ExtraData, m.ExtraDataOffset, buffer, 1, m.ExtraDataLength);
+          output.Send(buffer, 0, m.ExtraDataLength + 1, 0);
+          break;
+        case MidiEvent.Meta:
+          // do nothing.
+          break;
+        default:
+          var size = MidiEvent.FixedDataSize(m.StatusByte);
+          buffer[0] = m.StatusByte;
+          buffer[1] = m.Msb;
+          buffer[2] = m.Lsb;
+          output.Send(buffer, 0, size + 1, 0);
+          break;
+      }
+    }
+
+    private void ResetControllersOnAllChannels()
+    {
+      // all control reset on all channels.
+      for (var i = 0; i < 16; i++)
+      {
+        buffer[0] = (byte) (MidiEvent.CC + i);
+        buffer[1] = MidiCC.ResetAllControllers;
+        buffer[2] = 0;
+        this.output.Send(buffer, 0, 3, 0);
+      }
+    }
+
+    MidiEventLooper player;
 		// FIXME: it is still awkward to have it here. Move it into MidiEventLooper.
 		Task sync_player_task;
 		IMidiOutput output;
@@ -212,10 +220,12 @@ namespace Commons.Music.Midi
 			if (channelMask != null && channelMask.Length != 16)
 				throw new ArgumentException ("Unexpected length of channelMask array; it must be an array of 16 elements.");
 			channel_mask = channelMask;
+      if (channelMask == null)
+        return;
 			// additionally send all sound off for the muted channels.
-			for (int ch = 0; ch < channelMask.Length; ch++)
+			for (var ch = 0; ch < channelMask.Length; ch++)
 				if (channelMask [ch])
-					output.Send (new byte[] {(byte) (0xB0 + ch), 120, 0}, 0, 3, 0);
+					output.Send (new byte[] {(byte) (MidiEvent.CC + ch), MidiCC.AllSoundOff, 0}, 0, 3, 0);
 		}
 	}
 }
