@@ -4,19 +4,17 @@ using System.Threading;
 
 namespace Commons.Music.Midi
 {
-  class MidiEventLooper : IDisposable
+  internal sealed class MidiEventLooper : IDisposable
   {
     public MidiEventLooper (IList<MidiMessage> messages, IMidiPlayerTimeManager timeManager, int deltaTimeSpec)
     {
-      if (messages == null)
-        throw new ArgumentNullException ("messages");
       if (deltaTimeSpec < 0)
         throw new NotSupportedException ("SMPTe-based delta time is not implemented in this player.");
 			
       delta_time_spec = deltaTimeSpec;
-      time_manager = timeManager;
+      time_manager = timeManager ?? throw new ArgumentNullException(nameof(timeManager)); ;
 
-      this.messages = messages;
+      this.messages = messages ?? throw new ArgumentNullException (nameof(messages));
       state = PlayerState.Stopped;
     }
 
@@ -42,7 +40,7 @@ namespace Commons.Music.Midi
     internal byte [] current_time_signature = new byte [4];
     internal int play_delta_time;
 
-    public virtual void Dispose ()
+    public void Dispose ()
     {
       if (state != PlayerState.Stopped)
         Stop ();
@@ -58,7 +56,7 @@ namespace Commons.Music.Midi
     void Mute ()
     {
       for (int i = 0; i < 16; i++)
-        OnEvent (new MidiEvent ((byte) (i + 0xB0), 0x78, 0, null, 0, 0));
+        OnEvent (new MidiEvent ((byte) (MidiEvent.CC + i), MidiCC.AllSoundOff, 0, null, 0, 0));
     }
 
     public void Pause ()
@@ -119,7 +117,7 @@ namespace Commons.Music.Midi
         play_delta_time += m.DeltaTime;
       }
 			
-      if (m.Event.StatusByte == 0xFF) {
+      if (m.Event.StatusByte == MidiEvent.Reset) {
         if (m.Event.Msb == MidiMetaType.Tempo)
           current_tempo = MidiMetaType.GetTempo (m.Event.ExtraData, m.Event.ExtraDataOffset);
         else if (m.Event.Msb == MidiMetaType.TimeSignature && m.Event.ExtraDataLength == 4)
@@ -131,19 +129,17 @@ namespace Commons.Music.Midi
 
     void OnEvent (MidiEvent m)
     {
-      if (EventReceived != null)
-        EventReceived (m);
+      EventReceived?.Invoke (m);
     }
 
     public void Stop ()
     {
-      if (state != PlayerState.Stopped) {
-        do_stop = true;
-        if (pause_handle != null)
-          pause_handle.Set ();
-        if (Finished != null)
-          Finished ();
-      }
+      if (state == PlayerState.Stopped) 
+        return;
+
+      do_stop = true;
+      pause_handle?.Set ();
+      Finished?.Invoke ();
     }
 
     private ISeekProcessor seek_processor;
