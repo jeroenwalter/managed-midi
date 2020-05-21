@@ -168,7 +168,7 @@ namespace WpfMidiPlayer
 
     private void OnFinished(object? sender, EventArgs e)
     {
-      RaisePropertyChanged(nameof(State));
+      UpdateButtonStates();
     }
 
     public PlayerState State => _player?.State ?? PlayerState.Stopped;
@@ -183,9 +183,15 @@ namespace WpfMidiPlayer
       
       Task.Delay(100).Wait();
 
+      UpdateButtonStates();
+    }
+
+    private void UpdateButtonStates()
+    {
       RaisePropertyChanged(nameof(State));
       RaisePropertyChanged(nameof(PlaybackPosition));
       RaisePropertyChanged(nameof(PauseButtonText));
+      PlayCommand.RaiseCanExecuteChanged();
       PauseCommand.RaiseCanExecuteChanged();
       StopCommand.RaiseCanExecuteChanged();
     }
@@ -196,8 +202,7 @@ namespace WpfMidiPlayer
 
       Task.Delay(100).Wait();
 
-      RaisePropertyChanged(nameof(PauseButtonText));
-      RaisePropertyChanged(nameof(State));
+      UpdateButtonStates();
     }
 
     private void StopPlayer()
@@ -214,10 +219,7 @@ namespace WpfMidiPlayer
         _player = null;
       }
 
-      PlayCommand.RaiseCanExecuteChanged();
-      PauseCommand.RaiseCanExecuteChanged();
-      RaisePropertyChanged(nameof(PauseButtonText));
-      RaisePropertyChanged(nameof(State));
+      UpdateButtonStates();
     }
 
     public double PlaybackPosition
