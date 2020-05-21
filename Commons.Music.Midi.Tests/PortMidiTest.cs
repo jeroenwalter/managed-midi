@@ -10,6 +10,7 @@ namespace Commons.Music.Midi.Tests
 	public class PortMidiTest
 	{
 		[Test]
+    [Ignore("portmidi may not be runnable depending on the test runner platform")]
 		public void DeviceDetails ()
 		{
 			var a = new PortMidiAccess ();
