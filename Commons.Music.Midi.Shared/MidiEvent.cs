@@ -34,8 +34,8 @@ namespace Commons.Music.Midi
       int i = index;
       int end = index + size;
       while (i < end) {
-        if (bytes [i] == 0xF0) {
-          yield return new MidiEvent (0xF0, 0, 0, bytes, index, size);
+        if (bytes [i] == SysEx1) {
+          yield return new MidiEvent (SysEx1, 0, 0, bytes, index, size);
           i += size;
         } else {
           var z = MidiEvent.FixedDataSize (bytes [i]);
