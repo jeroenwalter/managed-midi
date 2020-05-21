@@ -46,6 +46,7 @@
     <Compile Include="PortMidiTest.cs" />
     <Compile Include="SMFTest.cs" />
     <Compile Include="TestHelper.cs" />
+    <Compile Include="VirtualMidiPlayerTimeManager.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\testmidi.mid" />
