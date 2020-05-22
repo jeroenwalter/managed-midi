@@ -59,34 +59,38 @@ namespace Commons.Music.Midi
           goto default;
         case MidiEvent.SysEx1:
         case MidiEvent.SysEx2:
-          if (buffer.Length <= m.ExtraDataLength)
-            buffer = new byte [buffer.Length * 2];
-          buffer[0] = m.StatusByte;
-          Array.Copy(m.ExtraData, m.ExtraDataOffset, buffer, 1, m.ExtraDataLength);
-          output.Send(buffer, 0, m.ExtraDataLength + 1, 0);
+          {
+            var buffer = new byte [m.ExtraDataLength + 1];
+            buffer[0] = m.StatusByte;
+            Array.Copy(m.ExtraData, m.ExtraDataOffset, buffer, 1, m.ExtraDataLength);
+            output.Send(buffer, 0, m.ExtraDataLength + 1, 0);
+          }
           break;
         case MidiEvent.Meta:
           // do nothing.
           break;
         default:
-          var size = MidiEvent.FixedDataSize(m.StatusByte);
-          buffer[0] = m.StatusByte;
-          buffer[1] = m.Msb;
-          buffer[2] = m.Lsb;
-          output.Send(buffer, 0, size + 1, 0);
+          {
+            var size = MidiEvent.FixedDataSize(m.StatusByte);
+            var buffer = new byte[3];
+            buffer[0] = m.StatusByte;
+            buffer[1] = m.Msb;
+            buffer[2] = m.Lsb;
+            output.Send(buffer, 0, size + 1, 0);
+          }
           break;
       }
     }
 
     private void ResetControllersOnAllChannels()
     {
-      // all control reset on all channels.
       for (var i = 0; i < 16; i++)
       {
-        buffer[0] = (byte) (MidiEvent.CC + i);
+        var buffer = new byte[3];
+				buffer[0] = (byte) (MidiEvent.CC + i);
         buffer[1] = MidiCC.ResetAllControllers;
         buffer[2] = 0;
-        this.output.Send(buffer, 0, 3, 0);
+        output.Send(buffer, 0, 3, 0);
       }
     }
 
@@ -98,7 +102,6 @@ namespace Commons.Music.Midi
 		MidiMusic music;
 
 		bool should_dispose_output;
-		byte [] buffer = new byte [0x100];
 		bool [] channel_mask;
 
 		public event Action Finished {
