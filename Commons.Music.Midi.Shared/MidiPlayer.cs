@@ -44,9 +44,15 @@ namespace Commons.Music.Midi
 
 			messages = SmfTrackMerger.Merge (music).Tracks [0].Messages;
 			player = new MidiEventLooper (messages, timeManager, music.DeltaTimeSpec);
-			player.Starting += ResetControllersOnAllChannels;
 			EventReceived += OnEventReceived;
+      
+      player.Exception += OnException;
 		}
+
+    private void OnException(object sender, Exception e)
+    {
+      Exception?.Invoke(this, e);
+    }
 
     private void OnEventReceived(MidiEvent m)
     {
@@ -60,7 +66,7 @@ namespace Commons.Music.Midi
         case MidiEvent.SysEx1:
         case MidiEvent.SysEx2:
           {
-            var buffer = new byte [m.ExtraDataLength + 1];
+            var buffer = new byte[m.ExtraDataLength + 1];
             buffer[0] = m.StatusByte;
             Array.Copy(m.ExtraData, m.ExtraDataOffset, buffer, 1, m.ExtraDataLength);
             output.Send(buffer, 0, m.ExtraDataLength + 1, 0);
@@ -82,65 +88,42 @@ namespace Commons.Music.Midi
       }
     }
 
-    private void ResetControllersOnAllChannels()
-    {
-      for (var i = 0; i < 16; i++)
-      {
-        var buffer = new byte[3];
-				buffer[0] = (byte) (MidiEvent.CC + i);
-        buffer[1] = MidiCC.ResetAllControllers;
-        buffer[2] = 0;
-        output.Send(buffer, 0, 3, 0);
-      }
-    }
 
-    MidiEventLooper player;
-		// FIXME: it is still awkward to have it here. Move it into MidiEventLooper.
-		Task sync_player_task;
-		IMidiOutput output;
-		IList<MidiMessage> messages;
-		MidiMusic music;
+    readonly MidiEventLooper player;
+    readonly IMidiOutput output;
+    readonly IList<MidiMessage> messages;
+    readonly MidiMusic music;
 
 		bool should_dispose_output;
 		bool [] channel_mask;
 
 		public event Action Finished {
-			add { player.Finished += value; }
-			remove { player.Finished -= value; }
-		}
+			add => player.Finished += value;
+      remove => player.Finished -= value;
+    }
 
 		public event Action PlaybackCompletedToEnd {
-			add { player.PlaybackCompletedToEnd += value; }
-			remove { player.PlaybackCompletedToEnd -= value; }
+			add => player.PlaybackCompletedToEnd += value;
+      remove => player.PlaybackCompletedToEnd -= value;
+    }
+
+		public PlayerState State => player.State;
+
+    public double TempoChangeRatio {
+			get => player.TempoRatio;
+			set => player.TempoRatio = value;
 		}
 
-		public PlayerState State {
-			get { return player.state; }
-		}
+		public int Tempo => player.CurrentTempo;
 
-		public double TempoChangeRatio {
-			get => player.tempo_ratio;
-			set => player.tempo_ratio = value;
-		}
+    public int Bpm => (int) (60.0 / Tempo * 1000000.0);
 
-		public int Tempo {
-			get { return player.current_tempo; }
-		}
-		
-		public int Bpm {
-			get { return (int) (60.0 / Tempo * 1000000.0); }
-		}
-		
-		// You can break the data at your own risk but I take performance precedence.
-		public byte [] TimeSignature {
-			get { return player.current_time_signature; }
-		}
+    // You can break the data at your own risk but I take performance precedence.
+		public byte [] TimeSignature => player.current_time_signature;
 
-		public int PlayDeltaTime {
-			get { return player.play_delta_time; }
-		}
-		
-		public TimeSpan PositionInTime => TimeSpan.FromMilliseconds (music.GetTimePositionInMillisecondsForTick (PlayDeltaTime));
+    public int PlayDeltaTime => player.PlayDeltaTime;
+
+    public TimeSpan PositionInTime => TimeSpan.FromMilliseconds (music.GetTimePositionInMillisecondsForTick (PlayDeltaTime));
 
 		public int GetTotalPlayTimeMilliseconds ()
 		{
@@ -148,10 +131,12 @@ namespace Commons.Music.Midi
 		}
 
 		public event MidiEventAction EventReceived {
-			add { player.EventReceived += value; }
-			remove { player.EventReceived -= value; }
-		}
+			add => player.EventReceived += value;
+      remove => player.EventReceived -= value;
+    }
 
+    public event EventHandler<Exception> Exception;
+    
 		public virtual void Dispose ()
 		{
 			player.Stop ();
@@ -159,55 +144,28 @@ namespace Commons.Music.Midi
 				output.Dispose ();
 		}
 
-		[Obsolete ("This should not be callable externally. It will be removed in the next API-breaking update.")]
-		public void StartLoop ()
-		{
-			sync_player_task = Task.Run (() => { player.PlayerLoop (); });
-		}
-
 		[Obsolete ("Its naming is misleading. It starts playing asynchronously, but won't return any results unlike typical async API. Use new Play() method instead")]
 		public void PlayAsync () => Play ();
 
 		public void Play ()
-		{
-			switch (State) {
-			case PlayerState.Playing:
-				return; // do nothing
-			case PlayerState.Paused:
-				player.Play ();
-				return;
-			case PlayerState.Stopped:
-			        if (sync_player_task == null || sync_player_task.Status != TaskStatus.Running)
-#pragma warning disable 618
-					StartLoop ();
-#pragma warning restore 618
-				player.Play ();
-				return;
-			}
-		}
+    {
+      if (State != PlayerState.Playing) 
+        player.Play();
+    }
 
 		[Obsolete ("Its naming is misleading. It starts playing asynchronously, but won't return any results unlike typical async API. Use new Pause() method instead")]
 		public void PauseAsync () => Pause ();
 
 		public void Pause ()
-		{
-			switch (State) {
-			case PlayerState.Playing:
-				player.Pause ();
-				return;
-			default: // do nothing
-				return;
-			}
-		}
+    {
+      if (State == PlayerState.Playing) 
+        player.Pause();
+    }
 
 		public void Stop ()
 		{
-			switch (State) {
-			case PlayerState.Paused:
-			case PlayerState.Playing:
-				player.Stop ();
-				break;
-			}
+      if (State != PlayerState.Stopped)
+        player.Stop();
 		}
 
 		[Obsolete ("Its naming is misleading. It starts seeking asynchronously, but won't return any results unlike typical async API. Use new Seek() method instead")]

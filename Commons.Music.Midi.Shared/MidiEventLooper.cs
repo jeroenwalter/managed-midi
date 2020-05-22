@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Commons.Music.Midi
 {
@@ -15,86 +18,168 @@ namespace Commons.Music.Midi
       time_manager = timeManager ?? throw new ArgumentNullException(nameof(timeManager)); ;
 
       this.messages = messages ?? throw new ArgumentNullException (nameof(messages));
-      state = PlayerState.Stopped;
     }
 
-    public MidiEventAction EventReceived;
-
+    public event MidiEventAction EventReceived;
     public event Action Starting;
     public event Action Finished;
     public event Action PlaybackCompletedToEnd;
+    public event EventHandler<Exception> Exception;
 
-    readonly IMidiPlayerTimeManager time_manager;
-    readonly IList<MidiMessage> messages;
-    readonly int delta_time_spec;
+    public PlayerState State { get; private set; } = PlayerState.Stopped;
+    public int CurrentTempo { get; private set; } = MidiMetaType.DefaultTempo;
+    public int PlayDeltaTime { get; private set; }
+    public double TempoRatio { get; set; } = 1.0;
 
-    // FIXME: I prefer ManualResetEventSlim (but it causes some regressions)
-    readonly ManualResetEvent pause_handle = new ManualResetEvent (false);
-
-    bool do_pause, do_stop;
-    internal double tempo_ratio = 1.0;
-
-    internal PlayerState state;
-    int event_idx = 0;
-    internal int current_tempo = MidiMetaType.DefaultTempo;
+    private readonly IMidiPlayerTimeManager time_manager;
+    private readonly IList<MidiMessage> messages;
+    private readonly int delta_time_spec;
+    
+    private readonly ManualResetEventSlim pause_handle = new ManualResetEventSlim (false);
+    
+    private bool do_pause; 
+    private bool do_stop;
+    private bool do_mute;
+    private int event_idx;
+    
     internal byte [] current_time_signature = new byte [4];
-    internal int play_delta_time;
-
+    
+    private Task sync_player_task;
+    private ISeekProcessor seek_processor;
+    
     public void Dispose ()
     {
-      if (state != PlayerState.Stopped)
+      if (State != PlayerState.Stopped)
         Stop ();
-      Mute ();
+      // NB: Stop should wait here until the PlayLoop has ended!
+      // Otherwise the midi output may be disposed while processing midi events.
     }
 
     public void Play ()
     {
-      pause_handle.Set ();
-      state = PlayerState.Playing;
-    }
+      if (State == PlayerState.Stopped)
+        StartLoop();
 
-    void Mute ()
-    {
-      for (int i = 0; i < 16; i++)
-        OnEvent (new MidiEvent ((byte) (MidiEvent.CC + i), MidiCC.AllSoundOff, 0, null, 0, 0));
+      pause_handle.Set ();
+      State = PlayerState.Playing;
     }
 
     public void Pause ()
     {
       do_pause = true;
-      Mute ();
     }
 
-    public void PlayerLoop ()
+    public void Stop()
     {
-      Starting?.Invoke ();
+      if (State == PlayerState.Stopped)
+        return;
+
+      do_stop = true;
+      pause_handle.Set();
+
+      var stopped = sync_player_task.Wait(1000);
+      if (stopped)
+        return;
+
+      Debug.WriteLine("PlayLoop did not stop on time.");
+    }
+    
+    public void Seek(ISeekProcessor seekProcessor, int ticks)
+    {
+      seek_processor = seekProcessor ?? new SimpleSeekProcessor(ticks);
       event_idx = 0;
-      play_delta_time = 0;
-      while (true) {
-        pause_handle.WaitOne ();
-        if (do_stop)
-          break;
-        if (do_pause) {
-          pause_handle.Reset ();
+      PlayDeltaTime = ticks;
+      do_mute = true;
+    }
+
+    private void Mute()
+    {
+      for (int i = 0; i < 16; i++)
+        OnEvent(new MidiEvent((byte)(MidiEvent.CC + i), MidiCC.AllSoundOff, 0, null, 0, 0));
+    }
+
+    private void ResetControllersOnAllChannels()
+    {
+      for (var i = 0; i < 16; i++)
+        OnEvent(new MidiEvent((byte) (MidiEvent.CC + i), MidiCC.ResetAllControllers, 0, null, 0, 0));
+    }
+
+    private void StartLoop()
+    {
+      if (sync_player_task?.Status == TaskStatus.Running)
+        return;
+
+      event_idx = 0;
+      PlayDeltaTime = 0;
+
+      sync_player_task = Task.Run(() =>
+      {
+        // As this task is not awaited, exceptions will not be handled, not even by the unhandled exception handler.
+        // TaskScheduler.UnobservedTaskException event will be called instead.
+        // This may cause the program to exit unexpectedly.
+        // Therefore catch exceptions here.
+        // Not only that, but the PlayerLoop emits EventReceived events and these may throw exceptions.
+        // We'll want to handle those as well.
+
+        try
+        {
+          PlayerLoop();
+        }
+        catch (Exception e)
+        {
+          Debug.WriteLine(e);
+
+          // DO NOT emit EventReceived or other events, e.g via Mute().
+          // Only the Exception event is allowed.
+
+          Exception?.Invoke(this, e); // let's hope this one doesn't throw.
+        }
+      });
+    }
+
+    private void PlayerLoop ()
+    {
+      ResetControllersOnAllChannels();
+      Mute();
+
+      Starting?.Invoke ();
+      
+      while (!do_stop && event_idx != messages.Count) 
+      {
+        if (do_pause) 
+        {
+          Mute();
+          State = PlayerState.Paused;
+
+          pause_handle.Reset();
+          pause_handle.Wait();
           do_pause = false;
-          state = PlayerState.Paused;
+          
           continue;
         }
-        if (event_idx == messages.Count)
-          break;
+
+        if (do_mute)
+        {
+          Mute();
+          do_mute = false;
+        }
+
         ProcessMessage (messages [event_idx++]);
       }
+
       do_stop = false;
-      Mute ();
-      state = PlayerState.Stopped;
+      Mute();
+      State = PlayerState.Stopped;
+
       if (event_idx == messages.Count)
         PlaybackCompletedToEnd?.Invoke ();
+
       Finished?.Invoke ();
     }
 
-    int GetContextDeltaTimeInMilliseconds (int deltaTime) => (int) (current_tempo / 1000 * deltaTime / delta_time_spec / tempo_ratio);
+    private int GetContextDeltaTimeInMilliseconds (int deltaTime) => (int) (CurrentTempo / 1000.0 * deltaTime / delta_time_spec / TempoRatio);
 
-    void ProcessMessage (MidiMessage m)
+    private void ProcessMessage (MidiMessage m)
     {
       if (seek_processor != null) {
         var result = seek_processor.FilterMessage (m);
@@ -114,12 +199,12 @@ namespace Commons.Music.Midi
       else if (m.DeltaTime != 0) {
         var ms = GetContextDeltaTimeInMilliseconds (m.DeltaTime);
         time_manager.WaitBy (ms);
-        play_delta_time += m.DeltaTime;
+        PlayDeltaTime += m.DeltaTime;
       }
 			
       if (m.Event.StatusByte == MidiEvent.Reset) {
         if (m.Event.Msb == MidiMetaType.Tempo)
-          current_tempo = MidiMetaType.GetTempo (m.Event.ExtraData, m.Event.ExtraDataOffset);
+          CurrentTempo = MidiMetaType.GetTempo (m.Event.ExtraData, m.Event.ExtraDataOffset);
         else if (m.Event.Msb == MidiMetaType.TimeSignature && m.Event.ExtraDataLength == 4)
           Array.Copy (m.Event.ExtraData, current_time_signature, 4);
       }
@@ -127,30 +212,9 @@ namespace Commons.Music.Midi
       OnEvent (m.Event);
     }
 
-    void OnEvent (MidiEvent m)
+    private void OnEvent (MidiEvent m)
     {
       EventReceived?.Invoke (m);
-    }
-
-    public void Stop ()
-    {
-      if (state == PlayerState.Stopped) 
-        return;
-
-      do_stop = true;
-      pause_handle?.Set ();
-      Finished?.Invoke ();
-    }
-
-    private ISeekProcessor seek_processor;
-
-    // not sure about the interface, so make it non-public yet.
-    internal void Seek (ISeekProcessor seekProcessor, int ticks)
-    {
-      seek_processor = seekProcessor ?? new SimpleSeekProcessor (ticks);
-      event_idx = 0;
-      play_delta_time = ticks;
-      Mute ();
     }
   }
 }
