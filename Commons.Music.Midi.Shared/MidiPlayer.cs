@@ -158,14 +158,12 @@ namespace Commons.Music.Midi
 
 		public void Pause ()
     {
-      if (State == PlayerState.Playing) 
-        player.Pause();
+      player.Pause();
     }
 
 		public void Stop ()
 		{
-      if (State != PlayerState.Stopped)
-        player.Stop();
+      player.Stop();
 		}
 
 		[Obsolete ("Its naming is misleading. It starts seeking asynchronously, but won't return any results unlike typical async API. Use new Seek() method instead")]

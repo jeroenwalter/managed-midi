@@ -66,7 +66,8 @@ namespace Commons.Music.Midi
 
     public void Pause ()
     {
-      do_pause = true;
+      if (State == PlayerState.Playing)
+        do_pause = true;
     }
 
     public void Stop()
