@@ -11,7 +11,7 @@ namespace WpfMidiPlayer
     private bool _isDisposed;
     private MidiMusic _midiMusic;
     private IMidiOutput _midiOutput;
-    private MidiPlayer _midiPlayer;
+    private MidiPlayer2 _midiPlayer;
 
     private double _playbackPositionPercentage;
     private readonly TimeSpan _playbackPositionUpdatedEventInterval = TimeSpan.FromMilliseconds(100.0);
@@ -74,7 +74,7 @@ namespace WpfMidiPlayer
       if (!LoadMidiFile(midiStream))
         return;
 
-      _midiPlayer = new MidiPlayer(_midiMusic, _midiOutput)
+      _midiPlayer = new MidiPlayer2(_midiMusic, _midiOutput)
       {
         TempoChangeRatio = _tempoChangeRatio
       };

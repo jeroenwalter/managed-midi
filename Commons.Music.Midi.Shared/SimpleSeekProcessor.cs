@@ -4,14 +4,17 @@ namespace Commons.Music.Midi
   {
     public SimpleSeekProcessor (int ticks)
     {
-      this.seek_to = ticks;
+      SeekTo = ticks;
     }
 
-    private int seek_to, current;
+    public int SeekTo { get; }
+
+    private int _current;
+
     public SeekFilterResult FilterMessage (MidiMessage message)
     {
-      current += message.DeltaTime;
-      if (current >= seek_to)
+      _current += message.DeltaTime;
+      if (_current >= SeekTo)
         return SeekFilterResult.PassAndTerminate;
       switch (message.Event.EventType) {
         case MidiEvent.NoteOn:
