@@ -25,6 +25,8 @@ namespace Commons.Music.Midi
     private ISeekProcessor _seekProcessor;
 
     private Task _syncPlayerTask;
+    private double _tempoRatio = 1.0;
+    private object _tempoRatioLock = new object();
 
     public MidiEventLooper2(IList<MidiMessage> messages, IMidiPlayerTimeManager timeManager, int deltaTimeSpec)
     {
@@ -49,7 +51,24 @@ namespace Commons.Music.Midi
     public PlayerState State { get; private set; } = PlayerState.Stopped;
     public int CurrentTempo { get; private set; } = MidiMetaType.DefaultTempo;
     public int PlayDeltaTime { get; private set; }
-    public double TempoRatio { get; set; } = 1.0;
+
+    public double TempoRatio
+    {
+      get
+      {
+        lock (_tempoRatioLock)
+        {
+          return _tempoRatio;
+        }
+      }
+      set
+      {
+        lock (_tempoRatioLock)
+        {
+          _tempoRatio = value;
+        }
+      }
+    }
 
     public void Dispose()
     {
@@ -208,10 +227,12 @@ namespace Commons.Music.Midi
       Starting?.Invoke();
       var midiMessage = _messages[_eventIdx++];
       var msToWait = 0;
+      
 
       while (!_doStop && _eventIdx != _messages.Count)
       {
         _timerEvent.WaitOne();
+        var tempoRatio = TempoRatio;
 
         if (_doPause)
         {
@@ -232,7 +253,7 @@ namespace Commons.Music.Midi
         }
         else
         {
-          if (TempoRatio <= 0.0)
+          if (tempoRatio <= 0.0)
             continue;
 
           if (msToWait > 0)
@@ -245,7 +266,7 @@ namespace Commons.Music.Midi
           ProcessMidiMessage(midiMessage);
           midiMessage = _messages[_eventIdx++];
 
-          msToWait = GetContextDeltaTimeInMilliseconds(midiMessage.DeltaTime);
+          msToWait = GetContextDeltaTimeInMilliseconds(midiMessage.DeltaTime, tempoRatio);
         }
       }
 
@@ -259,12 +280,9 @@ namespace Commons.Music.Midi
       Finished?.Invoke();
     }
 
-    private int GetContextDeltaTimeInMilliseconds(int deltaTime)
+    private int GetContextDeltaTimeInMilliseconds(int deltaTime, double tempoRatio)
     {
-      if (TempoRatio <= 0.0)
-        return int.MaxValue;
-
-      return (int)(CurrentTempo / 1000.0 * deltaTime / _deltaTimeSpec / TempoRatio);
+      return (int)(CurrentTempo / 1000.0 * deltaTime / _deltaTimeSpec / tempoRatio);
     }
 
 
