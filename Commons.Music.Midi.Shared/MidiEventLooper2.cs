@@ -18,7 +18,7 @@ namespace Commons.Music.Midi
     private readonly MicroTimer _timer;
 
     internal byte[] CurrentTimeSignature = new byte[4];
-    
+
     private bool _doPause;
     private bool _doStop;
     private int _eventIdx;
@@ -105,20 +105,22 @@ namespace Commons.Music.Midi
       if (_seekProcessor == null)
         throw new InvalidOperationException("SeekToTicks called while _seekProcessor == null");
 
+      var seekProcessor = _seekProcessor;
+      _seekProcessor = null;
+
       _eventIdx = 0;
-      PlayDeltaTime = _seekProcessor.SeekTo;
+      PlayDeltaTime = seekProcessor.SeekTo;
 
       Mute();
       var midiMessage = _messages[_eventIdx++];
-      var seekProcessor = _seekProcessor;
-      while (seekProcessor != null && _eventIdx != _messages.Count)
+      
+      while (_eventIdx != _messages.Count)
       {
         var result = seekProcessor.FilterMessage(midiMessage);
         switch (result)
         {
           case SeekFilterResult.PassAndTerminate:
           case SeekFilterResult.BlockAndTerminate:
-            _seekProcessor = null;
             return midiMessage;
 
           case SeekFilterResult.Block:
@@ -129,7 +131,7 @@ namespace Commons.Music.Midi
         ProcessMidiMessage(midiMessage);
         midiMessage = _messages[_eventIdx++];
       }
-      
+
       return midiMessage;
     }
 
@@ -189,7 +191,7 @@ namespace Commons.Music.Midi
         catch (Exception e)
         {
           Debug.WriteLine(e);
-          
+
           // DO NOT emit EventReceived or other events, e.g via Mute().
           // Only the Exception event is allowed.
 
@@ -210,7 +212,7 @@ namespace Commons.Music.Midi
       while (!_doStop && _eventIdx != _messages.Count)
       {
         _timerEvent.WaitOne();
-        
+
         if (_doPause)
         {
           Mute();
@@ -236,18 +238,13 @@ namespace Commons.Music.Midi
           if (msToWait > 0)
             msToWait--;
         }
-        
+
         while (msToWait == 0 && _eventIdx != _messages.Count)
         {
-          if (_seekProcessor != null)
-            midiMessage = SeekToTicks();
-          else
-          {
-            PlayDeltaTime += midiMessage.DeltaTime;
-            ProcessMidiMessage(midiMessage);
-            midiMessage = _messages[_eventIdx++];
-          }
-          
+          PlayDeltaTime += midiMessage.DeltaTime;
+          ProcessMidiMessage(midiMessage);
+          midiMessage = _messages[_eventIdx++];
+
           msToWait = GetContextDeltaTimeInMilliseconds(midiMessage.DeltaTime);
         }
       }
@@ -270,7 +267,7 @@ namespace Commons.Music.Midi
       return (int)(CurrentTempo / 1000.0 * deltaTime / _deltaTimeSpec / TempoRatio);
     }
 
-    
+
 
     private void OnEvent(MidiEvent m)
     {
