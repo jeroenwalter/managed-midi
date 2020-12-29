@@ -8,6 +8,7 @@ namespace Commons.Music.Midi
 {
   internal sealed class MidiEventLooper2 : IDisposable
   {
+    private const int WaitPeriodAfterPauseToWait = 200;
     private readonly int _deltaTimeSpec;
     private readonly IList<MidiMessage> _messages;
 
@@ -227,7 +228,7 @@ namespace Commons.Music.Midi
       Starting?.Invoke();
       var midiMessage = _messages[_eventIdx++];
       var msToWait = 0;
-      
+      var pausedByTempo = false;
 
       while (!_doStop && _eventIdx != _messages.Count)
       {
@@ -254,7 +255,18 @@ namespace Commons.Music.Midi
         else
         {
           if (tempoRatio <= 0.0)
+          {
+            if (!pausedByTempo)
+              pausedByTempo = true;
+
             continue;
+          }
+
+          if (pausedByTempo)
+          {
+            pausedByTempo = false;
+            msToWait = WaitPeriodAfterPauseToWait;
+          }
 
           if (msToWait > 0)
             msToWait--;
